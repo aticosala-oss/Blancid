@@ -26,7 +26,9 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Generar el link directo usando el servidor web de Render
     base_url = os.environ.get("RENDER_EXTERNAL_URL", f"http://localhost:{PORT}")
-    stream_link = f"{base_url}/stream/{file_id}/{file_name}"
+    import urllib.parse
+safe_name = urllib.parse.quote(file_name)
+stream_link = f"{base_url}/stream/{file_id}/{safe_name}"
     
     await msg.edit_text(f"✅ ¡Listo! Aquí tienes tu enlace directo para SSIPTV:\n\n`{stream_link}`")
 
