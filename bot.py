@@ -10,7 +10,7 @@ BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 PORT = int(os.environ.get("PORT", "8080"))
 
 # Iniciar el cliente nativo de Telegram
-bot = TelegramClient('blancid_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+bot = TelegramClient(None, API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
@@ -60,6 +60,8 @@ async def main():
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
     
+    # Arrancar el bot después de activar el puerto web
+    await bot.start(bot_token=BOT_TOKEN)
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
