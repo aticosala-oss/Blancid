@@ -16,14 +16,32 @@ bot = None
 # Configuración del manejador de streaming para reproducir en la TV o PotPlayer
 async def stream_handler(request):
     global bot
-    file_id = int(request.match_info['file_id'])
+    # Obtener la ID del mensaje de la URL
+    msg_id = int(request.match_info['file_id'])
+    
+    # Configurar las cabeceras para indicar que es un vídeo MP4
+    headers = {
+        "Content-Type": "video/mp4",
+        "Accept-Ranges": "bytes"
+    }
+    
+    response = web.StreamResponse(status=200, headers=headers)
+    await response.prepare(request)
     
     try:
-        # En una versión básica de streaming directo sin base de datos,
-        # enviamos una respuesta de control para validar el enlace.
-        return web.Response(text="Servidor Blancid MTProto conectado correctamente.", status=200)
+        # Reemplaza 'me' por el nombre del canal o la ID numérica del chat privado si es necesario
+        # En una configuración básica, buscamos el mensaje directamente usando el bot
+        chat_peer = 'me' 
+        message = await bot.get_messages(chat_peer, ids=msg_id)
+        
+        # Transmitir el archivo de vídeo en fragmentos directamente al reproductor
+        async for chunk in bot.iter_download(message.media, chunk_size=1024*1024):
+            await response.write(chunk)
+            
+        return response
     except Exception as e:
-        return web.Response(text=f"Error en streaming: {str(e)}", status=500)
+        print(f"Error durante el envío de datos: {e}")
+        return web.Response(text=f"Error en la retransmisión: {str(e)}", status=500)
 
 async def main():
     global bot
