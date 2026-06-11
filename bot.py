@@ -1,81 +1,67 @@
 import os
 import asyncio
-import urllib.parse
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from aiohttp import web, ClientSession
+from telethon import TelegramClient, events
+from aiohttp import web
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
+# Llaves del Servidor
+API_ID = int(os.environ.get("API_ID", 0))
+API_HASH = os.environ.get("API_HASH", "")
+BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 PORT = int(os.environ.get("PORT", "8080"))
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 ¡Hola! Soy Blancid. Reenvíame cualquier video pesado y te daré el link directo para tu tele.")
+# Iniciar el cliente nativo de Telegram
+bot = TelegramClient('blancid_session', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    video = update.message.video or update.message.document
-    if not video:
-        await update.message.reply_text("❌ Por favor, reenvíame un video o archivo de video válido.")
+@bot.on(events.NewMessage(pattern='/start'))
+async def start(event):
+    await event.reply("🚀 ¡Hola! Soy Blancid MTProto. Reenvíame el video gigante y ahora SÍ te daré el link directo sin límites.")
+
+@bot.on(events.NewMessage)
+async def handle_video(event):
+    if event.text and event.text.startswith('/'):
         return
-
-    msg = await update.message.reply_text("⏳ Procesando video gigante... Dame unos segundos.")
-    
-    file_id = video.file_id
-    file_name = getattr(video, 'file_name', 'video.mp4') or 'video.mp4'
-    
-    # Limpiar espacios en blanco automáticamente
-    safe_name = urllib.parse.quote(file_name)
-    
-    base_url = os.environ.get("RENDER_EXTERNAL_URL", f"http://localhost:{PORT}")
-    stream_link = f"{base_url}/stream/{file_id}/{safe_name}"
-    
-    await msg.edit_text(f"✅ ¡Listo! Aquí tienes tu enlace directo para tu reproductor o SSIPTV:\n\n`{stream_link}`")
-
-# ESTE ES EL MOTOR DE STREAMING REAL
-async def stream_handler(request):
-    file_id = request.match_info['file_id']
-    bot = request.app['telegram_bot']
-    
-    try:
-        # Obtener la ruta del archivo directo desde los servidores de Telegram
-        tg_file = await bot.get_file(file_id)
-        file_path = tg_file.file_path
         
-        # Conectar el reproductor de tu casa con el archivo de Telegram en tiempo real
-        async with ClientSession() as session:
-            async with session.get(file_path) as response:
-                headers = {
-                    "Content-Type": response.headers.get("Content-Type", "video/mp4"),
-                    "Content-Length": response.headers.get("Content-Length", "")
-                }
-                stream = web.StreamResponse(status=200, headers=headers)
-                await stream.prepare(request)
-                
-                async for chunk in response.content.iter_any():
-                    await stream.write(chunk)
-                return stream
-    except Exception as e:
-        return web.Response(text=f"Error en streaming: {str(e)}", status=500)
+    # Verificar si el mensaje contiene un video o archivo pesado
+    if event.message.video or event.message.document:
+        msg = await event.reply("⚡ Saltando límites de Telegram... Procesando archivo gigante.")
+        
+        # Conseguir los datos del archivo
+        media = event.message.video or event.message.document
+        file_id = event.message.id  # Usamos la ID del mensaje para el enlace seguro
+        
+        # Crear nombre limpio sin espacios raros
+        file_name = getattr(media, 'attributes', [None])[0]
+        name = getattr(file_name, 'file_name', 'video.mp4') if file_name else 'video.mp4'
+        safe_name = name.replace(" ", "%20")
+        
+        base_url = os.environ.get("RENDER_EXTERNAL_URL", f"http://localhost:{PORT}")
+        stream_link = f"{base_url}/stream/{file_id}/{safe_name}"
+        
+        await msg.edit(f"✅ ¡ENLACE DIRECTO REAL LISTO!:\n\n{stream_link}")
+
+# MOTOR DE STREAMING DIRECTO PASO A PASO
+async def stream_handler(request):
+    msg_id = int(request.match_info['file_id'])
+    
+    # El bot leerá el video en pequeños trozos en tiempo real directamente desde Telegram
+    headers = {"Content-Type": "video/mp4"}
+    response = web.StreamResponse(status=200, headers=headers)
+    await response.prepare(request)
+    
+    async for chunk in bot.iter_download(event.message, chunk_size=1024*1024):
+        await response.write(chunk)
+    return response
 
 async def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.VIDEO | filters.Document.ALL, handle_video))
-    
     server = web.Application()
-    server['telegram_bot'] = app.bot
     server.add_routes([web.get('/stream/{file_id}/{file_name}', stream_handler)])
-    
     runner = web.AppRunner(server)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
-    
     await site.start()
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
     
-    while True:
-        await asyncio.sleep(3600)
+    await bot.run_until_disconnected()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
