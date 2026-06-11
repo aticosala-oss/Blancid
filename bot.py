@@ -16,10 +16,12 @@ bot = None
 # Configuración del manejador de streaming para reproducir en la TV o PotPlayer
 async def stream_handler(request):
     global bot
-    # Obtener la ID del mensaje de la URL
+    
+    # 1. Obtener la ID del chat y del mensaje desde la nueva URL estructurada
+    chat_id = int(request.match_info['chat_id'])
     msg_id = int(request.match_info['file_id'])
     
-    # Configurar las cabeceras para indicar que es un vídeo MP4
+    # Configurar las cabeceras para indicar que es un vídeo MP4 en streaming continuo
     headers = {
         "Content-Type": "video/mp4",
         "Accept-Ranges": "bytes"
@@ -29,12 +31,10 @@ async def stream_handler(request):
     await response.prepare(request)
     
     try:
-        # Reemplaza 'me' por el nombre del canal o la ID numérica del chat privado si es necesario
-        # En una configuración básica, buscamos el mensaje directamente usando el bot
-        chat_peer = 'me' 
-        message = await bot.get_messages(chat_peer, ids=msg_id)
+        # 2. Buscamos el mensaje directamente usando el chat de origen real
+        message = await bot.get_messages(chat_id, ids=msg_id)
         
-        # Transmitir el archivo de vídeo en fragmentos directamente al reproductor
+        # 3. Transmitir el archivo de vídeo en fragmentos directamente al reproductor
         async for chunk in bot.iter_download(message.media, chunk_size=1024*1024):
             await response.write(chunk)
             
@@ -48,7 +48,8 @@ async def main():
     
     # 1. Configurar y arrancar el servidor web de aiohttp primero
     server = web.Application()
-    server.add_routes([web.get('/stream/{file_id}/{file_name}', stream_handler)])
+    # Cambiamos la ruta para que acepte la ID del chat antes de la ID del archivo
+    server.add_routes([web.get('/stream/{chat_id}/{file_id}/{file_name}', stream_handler)])
     runner = web.AppRunner(server)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
@@ -72,6 +73,9 @@ async def main():
             msg = await event.reply("⚡ Saltando límites de Telegram... Procesando archivo gigante.")
             
             media = event.message.video or event.message.document
+            
+            # Extraemos la ID del chat origen y la ID del mensaje
+            chat_id = event.chat_id
             file_id = event.message.id
             
             # Limpieza del nombre del archivo para evitar roturas de enlace
@@ -83,7 +87,9 @@ async def main():
                     
             safe_name = urllib.parse.quote(name)
             base_url = os.environ.get("RENDER_EXTERNAL_URL", f"http://localhost:{PORT}")
-            stream_link = f"{base_url}/stream/{file_id}/{safe_name}"
+            
+            # El nuevo formato de link incluye la ID del chat
+            stream_link = f"{base_url}/stream/{chat_id}/{file_id}/{safe_name}"
             
             await msg.edit(f"✅ ¡ENLACE DIRECTO REAL LISTO!:\n\n{stream_link}")
 
